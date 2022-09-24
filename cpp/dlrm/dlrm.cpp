@@ -24,17 +24,18 @@ struct DLRM_NetImpl : torch::nn::Module {
       std::vector<int> ln_top,
       int sigmoid_bot, 
       int sigmoid_top)
-        //: emb_l(create_emb(m_spa, ln_emb)),
         : emb_l(hardcode_emb(m_spa, ln_emb)),
-          m_spa(m_spa),
-          //bot_l(create_mlp(ln_bot, sigmoid_bot)),
           bot_l(hardcode_bot_mlp(ln_bot, sigmoid_bot)),
-          top_l(create_mlp(ln_top, sigmoid_top))
+          top_l(hardcode_top_mlp(ln_top, sigmoid_top))
+        //: emb_l(create_emb(m_spa, ln_emb)),
+        //  bot_l(create_mlp(ln_bot, sigmoid_bot)),
+        //  top_l(create_mlp(ln_top, sigmoid_top))
  {
   // DLRM submodules
   //register_module("emb_l", emb_l);
   register_module("top_l", top_l);
   register_module("bot_l", bot_l);
+  m_spa = m_spa;
   
   for (auto i = 0; i < ln_emb.size(); i++) {
     // Asuming weighted_pooling is none for now
@@ -50,12 +51,15 @@ struct DLRM_NetImpl : torch::nn::Module {
 
     std::vector<torch::Tensor> ly;
     ly = apply_emb(lS_o, lS_i);
-     
     
     torch::Tensor z;
     z = interact_features(x, ly);
-    // TODO: clamp output if needed
-    return z;
+
+    torch::Tensor p;
+    p = apply_mlp(z, this->top_l);
+  
+    std::cout << "p " << p << std::endl;
+    return p;
   }
 
   torch::Tensor interact_features(torch::Tensor x, std::vector<torch::Tensor> ly){
@@ -217,6 +221,66 @@ struct DLRM_NetImpl : torch::nn::Module {
     return emb_l;
   }
 
+  torch::nn::Sequential hardcode_top_mlp(std::vector<int> ln, int sigmoid_layer){
+    torch::nn::Sequential layers;
+    int i = 0;
+    int n = ln[i];
+    int m = ln[i+1];
+    torch::nn::Linear LL(torch::nn::LinearOptions(n, m).bias(true));
+    LL.get()->weight.data() = torch::tensor(
+      {{ 0.07509, -0.16988,  0.51033,  0.50962, -0.30932,  0.24017,  0.1416 ,  0.55809},
+       { 0.27504, -0.52728, -0.34629, -0.06801,  0.37444,  0.03276,  0.09318, -0.35945},
+       { 0.11355, -0.02864,  0.25703, -0.74033,  0.63174,  0.1327 , -0.08651, -0.63145},
+       { 0.4267 ,  0.41248,  0.02892,  0.29295, -0.10235, -0.02104,  0.00536,  0.08256}}
+    );
+    LL.get()->bias.data() = torch::tensor( 
+       {0.22748, -0.19963,  0.09053,  0.40374}
+    );
+    layers->push_back(LL);
+    if (i == sigmoid_layer) {
+      layers->push_back(torch::nn::Sigmoid());
+    } else {
+      layers->push_back(torch::nn::ReLU());
+    }
+
+    i = 1;
+    n = ln[i];
+    m = ln[i+1];
+    torch::nn::Linear LL2(torch::nn::LinearOptions(n, m).bias(true));
+    LL2.get()->weight.data() = torch::tensor(
+      {{ 0.46912, 0.12176, 0.24351, 0.33597},
+       {-0.23683, 1.3261 , 0.97485, 0.36131}}
+    );
+    LL2.get()->bias.data() = torch::tensor(
+        {-1.13941, 0.0425}
+    );
+    layers->push_back(LL2);
+    if (i == sigmoid_layer) {
+      layers->push_back(torch::nn::Sigmoid());
+    } else {
+      layers->push_back(torch::nn::ReLU());
+    }
+
+    i = 2;
+    n = ln[i];
+    m = ln[i+1];
+    torch::nn::Linear LL3(torch::nn::LinearOptions(n, m).bias(true));
+    LL3.get()->weight.data() = torch::tensor(
+      {0.37756, 0.55917}
+    );
+    LL3.get()->bias.data() = torch::tensor(
+      {-0.59546}
+    );
+    layers->push_back(LL3);
+    if (i == sigmoid_layer) {
+      layers->push_back(torch::nn::Sigmoid());
+    } else {
+      layers->push_back(torch::nn::ReLU());
+    }
+
+    return layers;
+    
+  }
 
   // DEBUGing hardcoding weights and biases to test correctness
   torch::nn::Sequential hardcode_bot_mlp(std::vector<int> ln, int sigmoid_layer){
