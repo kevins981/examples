@@ -62,8 +62,8 @@ struct DLRM_NetImpl : torch::nn::Module {
     // x is the output of bottom mlp, ly the output of embedding layers
     // need to concat them into a single matrix
     // only dot interaction op for now
-    std::cout << "x  " << x << std::endl;
-    std::cout << "ly  " << ly << std::endl;
+    //std::cout << "x  " << x << std::endl;
+    //std::cout << "ly  " << ly << std::endl;
     //std::vector<uint64_t> shapes = x.sizes();
     auto shapes = x.sizes();  // type IntArrayRef
     int batch_size, d; // d is the dimension of the bot mlp output vector
@@ -77,8 +77,8 @@ struct DLRM_NetImpl : torch::nn::Module {
     } else {
       std::cout << "Assertion fail: shapes should contain 1 or 2 elements." << std::endl;
     }
-    std::cout << "batch size  " << batch_size << std::endl;
-    std::cout << "d  " << d << std::endl;
+    //std::cout << "batch size  " << batch_size << std::endl;
+    //std::cout << "d  " << d << std::endl;
     
     // create a TensorList of x and ly
     // first create the corresponding vector of tensors and cast to TensorList
@@ -96,17 +96,48 @@ struct DLRM_NetImpl : torch::nn::Module {
     torch::Tensor temp_cat;
     // temp_cat is a 1D vector
     temp_cat = torch::cat(ly, 1); //dim = 0
-    std::cout << "temp cat  " << temp_cat << std::endl;
-    std::cout << "x  " << x << std::endl;
+    //std::cout << "temp cat  " << temp_cat << std::endl;
+    //std::cout << "x  " << x << std::endl;
     // then cat the result with x
     torch::Tensor T;
     T = torch::cat({x, temp_cat}, 1); 
-    std::cout << "T cat  " << T << std::endl;
+    //std::cout << "T cat  " << T << std::endl;
     T = T.view({batch_size, -1, d}); 
-    std::cout << "T " << T << std::endl;
+    //std::cout << "T " << T << std::endl;
     
-    torch::Tensor z;
-    return z;
+    torch::Tensor Z;
+    Z = torch::bmm(T, torch::transpose(T, 1, 2));
+    //std::cout << "Z " << Z << std::endl;
+    
+    
+    auto Zshapes = Z.sizes();
+    int ni = Zshapes[1];
+    int nj = Zshapes[2];
+
+    // Corresponding python code: 
+    // li = torch.tensor([i for i in range(ni) for j in range(i + offset)])
+    // lj = torch.tensor([j for i in range(nj) for j in range(i + offset)])
+    std::vector<long> li_tmp, lj_tmp;
+    for ( int i  = 0; i < ni; i++) {
+      for ( int j  = 0; j < i; j++) {
+        li_tmp.push_back(i);
+        lj_tmp.push_back(j);
+      }
+    }
+    //std::cout << "li vec " << li_tmp << std::endl;
+    auto opts = torch::TensorOptions().dtype(torch::kInt64);
+    torch::Tensor li = torch::from_blob(li_tmp.data(), {li_tmp.size()}, opts).clone();
+    torch::Tensor lj = torch::from_blob(lj_tmp.data(), {lj_tmp.size()}, opts).clone();
+    //std::cout << "li tensor " << li << std::endl;
+    //std::cout << "lj tensor " << lj << std::endl;
+
+    // tensor indexing guide: https://pytorch.org/cppdocs/notes/tensor_indexing.html
+    torch::Tensor Zflat = Z.index({torch::indexing::Slice(), li, lj});
+    //std::cout << "zflat " << Zflat << std::endl;
+    
+    torch::Tensor R = torch::cat({x, Zflat}, 1);
+    //std::cout << "R " << R << std::endl;
+    return R;
   }
 
   torch::Tensor apply_mlp(torch::Tensor dense_x, torch::nn::Sequential layers){
