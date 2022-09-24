@@ -24,11 +24,11 @@ struct DLRM_NetImpl : torch::nn::Module {
       std::vector<int> ln_top,
       int sigmoid_bot, 
       int sigmoid_top)
-        : emb_l(create_emb(m_spa, ln_emb)),
-        //: emb_l(hardcode_emb(m_spa, ln_emb)),
+        //: emb_l(create_emb(m_spa, ln_emb)),
+        : emb_l(hardcode_emb(m_spa, ln_emb)),
           m_spa(m_spa),
-          bot_l(create_mlp(ln_bot, sigmoid_bot)),
-          //bot_l(hardcode_bot_mlp(ln_bot, sigmoid_bot)),
+          //bot_l(create_mlp(ln_bot, sigmoid_bot)),
+          bot_l(hardcode_bot_mlp(ln_bot, sigmoid_bot)),
           top_l(create_mlp(ln_top, sigmoid_top))
  {
   // DLRM submodules
@@ -44,15 +44,69 @@ struct DLRM_NetImpl : torch::nn::Module {
  }
 
   torch::Tensor forward(torch::Tensor dense_x, torch::Tensor lS_o, std::vector<torch::Tensor> lS_i){
-    torch::Tensor p;
-    p = apply_mlp(dense_x, this->bot_l);
+    torch::Tensor x;
+    x = apply_mlp(dense_x, this->bot_l);
     //std::cout << "forward pass results:" << p << std::endl;
 
     std::vector<torch::Tensor> ly;
     ly = apply_emb(lS_o, lS_i);
      
+    
+    torch::Tensor z;
+    z = interact_features(x, ly);
     // TODO: clamp output if needed
-    return p;
+    return z;
+  }
+
+  torch::Tensor interact_features(torch::Tensor x, std::vector<torch::Tensor> ly){
+    // x is the output of bottom mlp, ly the output of embedding layers
+    // need to concat them into a single matrix
+    // only dot interaction op for now
+    std::cout << "x  " << x << std::endl;
+    std::cout << "ly  " << ly << std::endl;
+    //std::vector<uint64_t> shapes = x.sizes();
+    auto shapes = x.sizes();  // type IntArrayRef
+    int batch_size, d; // d is the dimension of the bot mlp output vector
+    if (shapes.size() == 1) {
+      // if x is 1D
+      batch_size = 1;
+      d = shapes[0];
+    } else if (shapes.size() == 2) {
+      batch_size = shapes[0];
+      d = shapes[1];
+    } else {
+      std::cout << "Assertion fail: shapes should contain 1 or 2 elements." << std::endl;
+    }
+    std::cout << "batch size  " << batch_size << std::endl;
+    std::cout << "d  " << d << std::endl;
+    
+    // create a TensorList of x and ly
+    // first create the corresponding vector of tensors and cast to TensorList
+    //std::vector<torch::Tensor> temp_vec;
+    //temp_vec.push_back(x);
+    //std::vector<torch::Tensor> temp_vec_concat;
+    //temp_vec.insert(temp_vec.end(), ly.begin(), ly.end());
+    //std::cout << "after concating x and ly  " << temp_vec << std::endl;
+
+    //torch::TensorList temp_list = torch::TensorList(temp_vec);
+    //std::cout << "tensorlist " << temp_list << std::endl;
+
+    //T = torch::cat(temp_list, 1); //dim = 1
+    // first cat the ly tensors
+    torch::Tensor temp_cat;
+    // temp_cat is a 1D vector
+    temp_cat = torch::cat(ly, 1); //dim = 0
+    std::cout << "temp cat  " << temp_cat << std::endl;
+    std::cout << "x  " << x << std::endl;
+    // then cat the result with x
+    torch::Tensor T;
+    T = torch::cat({x, temp_cat}, 1); 
+    std::cout << "T cat  " << T << std::endl;
+    T = T.view({batch_size, -1, d}); 
+    std::cout << "T " << T << std::endl;
+    
+    torch::Tensor z;
+    return z;
   }
 
   torch::Tensor apply_mlp(torch::Tensor dense_x, torch::nn::Sequential layers){
@@ -66,13 +120,13 @@ struct DLRM_NetImpl : torch::nn::Module {
     for (auto i = 0; i < lS_i.size(); i++) {
       torch::Tensor sparse_index_group_batch = lS_i[i];
       torch::Tensor sparse_offset_group_batch = lS_o.index({i});
-      std::cout << "index: " << sparse_index_group_batch << std::endl;
-      std::cout << "offset: " << sparse_offset_group_batch << std::endl;
+      //std::cout << "index: " << sparse_index_group_batch << std::endl;
+      //std::cout << "offset: " << sparse_offset_group_batch << std::endl;
 
       torch::nn::EmbeddingBag E = emb_l[i];
       torch::Tensor V = E->forward(sparse_index_group_batch, sparse_offset_group_batch);
       
-      std::cout << "embedding result " << V << std::endl;
+      //std::cout << "embedding result " << V << std::endl;
       ly.push_back(V);
     }
     
@@ -102,25 +156,32 @@ struct DLRM_NetImpl : torch::nn::Module {
     int i = 0;
     int n = ln[i];
     torch::nn::EmbeddingBag EE(torch::nn::EmbeddingBagOptions(n,m).sparse(true).mode(torch::kSum));
-    EE.get()->weight.data() = torch::tensor({{-0.44032, -0.10196},
-                                             { 0.238  , -0.31751},
-                                             {-0.32455,  0.03155},
-                                             { 0.03183,  0.1344 }});
+    EE.get()->weight.data() = torch::tensor({{-0.46095, -0.33017},
+ { 0.37814, -0.40165},
+ {-0.07889,  0.45789},
+ { 0.03317,  0.19188}});
+
+
     emb_l.push_back(EE);
 
     i = 1;
     n = ln[i];
     torch::nn::EmbeddingBag EE1(torch::nn::EmbeddingBagOptions(n,m).sparse(true).mode(torch::kSum));
-    EE1.get()->weight.data() = torch::tensor({{ 0.40349,  0.25918},
-                                              { 0.1282 ,  0.25686},
-                                              {-0.20443, -0.15959}});
+
+    EE1.get()->weight.data() = torch::tensor(
+{{-0.21302,  0.21535},
+ { 0.38639, -0.55623},
+ { 0.28884,  0.56449}}
+    );
     emb_l.push_back(EE1);
 
     i = 2;
     n = ln[i];
     torch::nn::EmbeddingBag EE2(torch::nn::EmbeddingBagOptions(n,m).sparse(true).mode(torch::kSum));
-    EE2.get()->weight.data() = torch::tensor({{-0.38429, -0.29173},
-                                              {0.18523, -0.57685}});
+    EE2.get()->weight.data() = torch::tensor(
+    {{ 0.35096, -0.3105 },
+     { 0.4091 , -0.56112}}
+    );
     emb_l.push_back(EE2);
     return emb_l;
   }
@@ -132,11 +193,14 @@ struct DLRM_NetImpl : torch::nn::Module {
     int i = 0;
     int n = ln[i];
     int m = ln[i+1];
+
     torch::nn::Linear LL(torch::nn::LinearOptions(n, m).bias(true));
-    LL.get()->weight.data() = torch::tensor({{-0.99188, -0.95116, -1.47006, -0.12516},
-                                             {-0.37202, -0.94831,  1.26233,  0.0187},
-                                             {-0.18422, -0.38755,  0.55569, -0.12921}});
-    LL.get()->bias.data() = torch::tensor({-0.06519, -0.9588, 0.00782});
+    LL.get()->weight.data() = torch::tensor(
+      {{ 0.46686, -0.05954, -0.55486, -0.53959},
+       {-0.56566,  0.3508 , -0.0334 , -0.92935},
+       { 0.05514, -0.33229,  0.14738, -0.58299}}
+    );
+    LL.get()->bias.data() = torch::tensor( {-0.35218,  0.17691,  0.97678} );
     layers->push_back(LL);
     if (i == sigmoid_layer) {
       layers->push_back(torch::nn::Sigmoid());
@@ -148,9 +212,14 @@ struct DLRM_NetImpl : torch::nn::Module {
     n = ln[i];
     m = ln[i+1];
     torch::nn::Linear LL2(torch::nn::LinearOptions(n, m).bias(true));
-    LL2.get()->weight.data() = torch::tensor({{ 0.21337, -0.58605,  0.1744 },
-                                              { 0.23455,  0.7427 , -1.28533}});
-    LL2.get()->bias.data() = torch::tensor({0.4119, -0.50995});
+
+
+
+    LL2.get()->weight.data() = torch::tensor(
+      {{-0.47305, -0.36733, -0.07005},
+       { 1.29149,  0.28304,  0.43221}}
+    );
+    LL2.get()->bias.data() = torch::tensor({0.01618, 0.60616});
     layers->push_back(LL2);
     if (i == sigmoid_layer) {
       layers->push_back(torch::nn::Sigmoid());
@@ -222,9 +291,14 @@ int main(int argc, const char* argv[]) {
   
   dlrm->to(device);
   //torch::Tensor dense = torch::tensor({0.6965, 0.2861, 0.2269, 0.5513}, {torch::kFloat64});
-  torch::Tensor dense = torch::tensor({0.6965, 0.2861, 0.2269, 0.5513});
-  torch::Tensor offset = torch::tensor({{0}, {0}, {0}});
-  std::vector<torch::Tensor> indice = {torch::tensor({1,2,3}), torch::tensor({1}), torch::tensor({1})};
+  //torch::Tensor dense = torch::tensor({{0.6965, 0.2861, 0.2269, 0.5513},
+  //                                     {0.7195, 0.4231, 0.9808, 0.6848}});
+  torch::Tensor dense = torch::tensor(
+    {{4.1702e-01, 7.2032e-01, 1.1437e-04, 3.0233e-01},
+     {1.4676e-01, 9.2339e-02, 1.8626e-01, 3.4556e-01}}
+  );
+  torch::Tensor offset = torch::tensor({{0, 2}, {0, 1}, {0, 2}});
+  std::vector<torch::Tensor> indice = {torch::tensor({1,2,0,1,3}), torch::tensor({1, 0}), torch::tensor({0,1,1})};
   dlrm(dense, offset, indice);
 
 
