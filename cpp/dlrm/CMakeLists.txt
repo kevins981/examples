@@ -19,6 +19,11 @@ add_executable(dlrm dlrm.cpp)
 target_link_libraries(dlrm "${TORCH_LIBRARIES}")
 set_property(TARGET dlrm PROPERTY CXX_STANDARD 14)
 
+if(CMAKE_BUILD_TYPE MATCHES Debug)
+    message(STATUS "Running debug build.")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -g")
+endif()
+
 if (MSVC)
   file(GLOB TORCH_DLLS "${TORCH_INSTALL_PREFIX}/lib/*.dll")
   add_custom_command(TARGET dlrm
