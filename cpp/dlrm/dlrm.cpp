@@ -360,6 +360,39 @@ struct DLRM_NetImpl : torch::nn::Module {
 
 TORCH_MODULE(DLRM_Net);
 
+
+// So we probably can use the python dataloader to preprocess the data (generate .npz files).
+// Then in cpp we can just use the npz files to generate the test set.
+// However, since npz is numpy native, need to use c++ libraries such as https://github.com/rogersce/cnpy
+// to read the data. Does not look too difficult.
+
+// once we can read the .npz files, we can do extract and split the test set. 
+// See https://github.com/facebookresearch/dlrm/blob/8acfad6f1c27eb55989770e695658404d370f490/dlrm_data_pytorch.py#L228
+// For inference, probably dont need the training set.
+
+
+//class CriteoDataset : public torch::data::Dataset<CriteoDataset>
+//{
+//  public:
+//    MyDataset(const std::string& loc_states, const std::string& loc_labels) 
+//      : states_(read_data(loc_states)),
+//        labels_(read_data(loc_labels) {   
+//      int den_fea = 13;
+//      int days = 24;
+//      
+//    };
+//    
+//    torch::data::Example<> MyDataset::get(size_t index) {
+//      // You may for example also read in a .csv file that stores locations
+//      // to your data and then read in the data at this step. Be creative.
+//      return {states_[index], labels_[index]};
+//    } 
+//};
+
+
+
+
+
 int main(int argc, const char* argv[]) {
   torch::manual_seed(1);
 
@@ -395,6 +428,30 @@ int main(int argc, const char* argv[]) {
   torch::Tensor offset = torch::tensor({{0, 2}, {0, 1}, {0, 2}});
   std::vector<torch::Tensor> indice = {torch::tensor({1,2,0,1,3}), torch::tensor({1, 0}), torch::tensor({0,1,1})};
   dlrm(dense, offset, indice);
+
+
+  /*
+    
+  train_data, train_ld, test_data, test_ld = dp.make_criteo_data_and_loaders(args)
+  ln_emb = train_data.counts
+
+
+  inference(test_ld)
+  // in inference
+  for i, testBatch in enumerate(test_ld):
+    X_test, lS_o_test, lS_i_test, T_test, W_test, CBPP_test = unpack_batch(testBatch)
+    forward(X_test, lS_o_test, lS_i_test)
+
+
+  make_criteo_data_and_loaders(args):
+    train_data = CriteoDataset(...)
+    test_data = CriteoDataset(...)
+    train_loader = torch.utils.data.DataLoader(train_data ...)
+    test_loader = torch.utils.data.DataLoader(test_data ...)
+
+  CriteoDataset class
+
+  */
 
 
 }
